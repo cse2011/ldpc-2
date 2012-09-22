@@ -70,6 +70,8 @@ clean :
 			rm "$${f}"; \
 		fi \
 	done
+	@rm -rf ../libldpc.o
+	@rm -rf ../libldpc.a
 
 cleanall : clean
 	@for f in ${BINDIR}/libldpc.a ${BINDIR}/*.pchk ; do \

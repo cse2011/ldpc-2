@@ -1,6 +1,9 @@
 LDPC_LIBRARY = ldpclib/libldpc.o
-all: sender receiver
+all: libldpc sender receiver
 
+libldpc:
+	cd ldpclib/src; make; cd ../..
+	
 sender: sender.o socketwrapper.o serializer.o ldpcuser.o
 	g++ -g -Wall -o sender sender.o socketwrapper.o serializer.o ldpcuser.o ${LDPC_LIBRARY}
 
@@ -26,4 +29,5 @@ clean:
 	rm -rf *.o
 	rm sender
 	rm receiver
+	cd ldpclib/src; make clean; cd ../..
 	
