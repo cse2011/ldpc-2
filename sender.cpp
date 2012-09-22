@@ -86,21 +86,13 @@ int main(int argc, char *argv[]){
 void Sender::Main(sockaddr_in *hostAddr, char* filePath){
         pthread_t ldpcThread;
 	// UDP socket connection time
-	hostAddr->sin_port = htons(RECVER_PORT);
+	hostAddr->sin_port = 0;
 	recvAddr = hostAddr;
 	
-	sockIn = SocketWrapper::Socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	sockOut = SocketWrapper::Socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	sockIn = SocketWrapper::Socket(PF_INET, SOCK_RAW, IPRAW_ACKPROTO);
+	sockOut = SocketWrapper::Socket(PF_INET, SOCK_RAW, IPRAW_PROTO);
 	SocketWrapper::SetReuseSock(sockIn);
 	SocketWrapper::SetReuseSock(sockOut);
-	
-	// Bind the sockIn to the UDP port
-	struct sockaddr_in selfAddr;
-	selfAddr.sin_family = AF_INET;
-	selfAddr.sin_addr.s_addr = INADDR_ANY;
-	selfAddr.sin_port = htons(SENDER_PORT);
-	memset(selfAddr.sin_zero, 0, 8);
-	SocketWrapper::Bind(sockIn, &selfAddr, sizeof(sockaddr_in));
 	SocketWrapper::SetNonblock(sockIn);
 	
 	// Open the file
@@ -182,13 +174,12 @@ void Sender::Main(sockaddr_in *hostAddr, char* filePath){
 #ifdef LOG
 					cout<<current->num<<endl;
 #endif
-                                        if(current->num >= metadata.numPackets && !Sender::ldpcThreadDone) {
-                                            current = current->next;
-                                            
-                                        }
-                                        else if(Sender::SendChunk(current->num)){
-                                                current = current->next;
-                                        }
+					if(current->num >= metadata.numPackets && !Sender::ldpcThreadDone) {
+						current = current->next;
+					}
+					else if(Sender::SendChunk(current->num)){
+						current = current->next;
+					}
 				}
 				if(bitmapRemainder == 0)
 					stopSending = true;
@@ -202,11 +193,12 @@ void Sender::Main(sockaddr_in *hostAddr, char* filePath){
 }
 
 bool Sender::RecvAck(unsigned int& seqNum){
-	char buf[PACKET_SIZE + 50];
+	char actualbuf[PACKET_SIZE + 50];
+	char* buf = actualbuf + IPHDRSIZE;
 	struct sockaddr_in tempRecvAddr;
 	socklen_t tempRecvAddrlen = sizeof(sockaddr_in);
-	
-	ssize_t recvLen = SocketWrapper::Recvfrom(sockIn, buf, sizeof(PacketAck), 0, &tempRecvAddr, &tempRecvAddrlen);
+	ssize_t recvLen = SocketWrapper::Recvfrom(sockIn, actualbuf, sizeof(actualbuf), 0, &tempRecvAddr, &tempRecvAddrlen);
+	recvLen -= IPHDRSIZE;
 	if(recvLen == sizeof(PacketAck)){
 		PacketAck ackPack;
 		unserialize_Ack(buf, &ackPack);
@@ -234,6 +226,8 @@ bool Sender::Send(char* buf, ssize_t len){
 	catch(int ex){
 		if(ex == EX_SOCK_ERRSENDTO && errno == ENOBUFS)
 			return false;
+		if(ex == EX_SOCK_ERRSENDTO && (errno == EWOULDBLOCK || errno == EAGAIN))
+			return true;
 		else throw ex;
 	}
 	return true;
@@ -245,9 +239,7 @@ bool Sender::SendChunk(unsigned int packetNum){
 	PacketData *packet = (PacketData*)packBuf;
 	ssize_t packSize = PACKET_SIZE;
 	packet->seqNum = packetNum;
-	
 	if(packetNum < metadata.numPackets){
-		
 		int readSize;
 		if(packetNum == (metadata.numPackets - 1)){
 			// Last data packet
@@ -264,9 +256,8 @@ bool Sender::SendChunk(unsigned int packetNum){
 		char* packStart = LdpcUser::fecMem + (packetNum * chunkSize);
 		memcpy(packet->data, packStart, chunkSize);
 	}
-	
 	char sendbuf[PACKET_SIZE];
 	serialize_Data(packet, packSize, sendbuf);
-	bool retVal = Sender::Send(sendbuf, packSize);
+	bool retVal = Sender::Send(sendbuf, packSize);  
 	return retVal;
 }

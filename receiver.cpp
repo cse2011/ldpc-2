@@ -66,26 +66,18 @@ int main(int argc, char* argv[]){
 }
 
 void Receiver::Main(){
-        pthread_t ldpcThread;
-        pthread_mutex_init(&decodeLock,NULL);
-        //Allocate memory for ldpcDataBuffer
-        ldpcDataBuffer = (char*) malloc(LDPC_DATA_BUFFER_SIZE);
+	pthread_t ldpcThread;
+	pthread_mutex_init(&decodeLock,NULL);
+	//Allocate memory for ldpcDataBuffer
+	ldpcDataBuffer = (char*) malloc(LDPC_DATA_BUFFER_SIZE);
         
 	// UDP socket connection time
 	sendAddr = new sockaddr_in;
 	
-	sockIn = SocketWrapper::Socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	sockOut = SocketWrapper::Socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	sockIn = SocketWrapper::Socket(PF_INET, SOCK_RAW, IPRAW_PROTO);
+	sockOut = SocketWrapper::Socket(PF_INET, SOCK_RAW, IPRAW_ACKPROTO);
 	SocketWrapper::SetReuseSock(sockIn);
 	SocketWrapper::SetReuseSock(sockOut);
-	
-	// Bind the sockIn to the UDP port
-	struct sockaddr_in selfAddr;
-	selfAddr.sin_family = AF_INET;
-	selfAddr.sin_addr.s_addr = INADDR_ANY;
-	selfAddr.sin_port = htons(RECVER_PORT);
-	memset(selfAddr.sin_zero, 0, 8);
-	SocketWrapper::Bind(sockIn, &selfAddr, sizeof(sockaddr_in));
 	
 	// Receive the metadata
 	Receiver::ReceiveMeta();
@@ -100,20 +92,20 @@ void Receiver::Main(){
 	socklen_t senderAddrLen = sizeof(sockaddr_in);
 	unsigned int totalNumPackets = metadata->numPackets + metadata->numFecPackets;
 	
-	char buf[PACKET_SIZE + 50];
+	char actualbuf[PACKET_SIZE + 50];
+	char *buf = actualbuf + IPHDRSIZE;
 	int count = 0;
 	int skipCount = totalNumPackets / 1000;
 	if(skipCount == 0) skipCount = 1;
 	char packetBuffer[PACKET_SIZE];
 	PacketData *packet = (PacketData*)packetBuffer;
 	while(bitmapRemainder>0){
-		unsigned int rcvdLen = SocketWrapper::Recvfrom(sockIn, buf, sizeof(buf), 0, &senderAddr, &senderAddrLen);
+		unsigned int rcvdLen = SocketWrapper::Recvfrom(sockIn, actualbuf, sizeof(actualbuf), 0, &senderAddr, &senderAddrLen);
+		rcvdLen -= IPHDRSIZE;
 		if(rcvdLen < metadata->sizePacket){
 			memset(packet, 0, PACKET_SIZE);
-			unserialize_Data(buf, rcvdLen, packet);
 		}
-		else
-			unserialize_Data(buf, rcvdLen, packet);
+		unserialize_Data(buf, rcvdLen, packet);
 		if(packet->seqNum == 0xFFFFFFFF){
 			continue;   // Duplicate metadata packet
 		}
@@ -127,33 +119,31 @@ void Receiver::Main(){
 				
 				if(count%skipCount == 0)		//Display purposes
 					cerr<<".";
-					
-                                if(ldpcFlag == 1) {
-                                
-                                    // Add to the LDPC
-                                    if(mutexFlag) pthread_mutex_lock(&decodeLock);
-                                    LdpcUser::AddDecodePacket(packet->data, packet->seqNum);
-                                    if(mutexFlag) pthread_mutex_unlock(&decodeLock);
-                                    // LDPC terminating condition
-                                    if(bitmapRemainder < metadata->numFecPackets){
-                                        if(mutexFlag) pthread_mutex_lock(&decodeLock);
-                                        if(LdpcUser::IsDecodingComplete()){
-                                                    cerr<<"\nLDPC Terminating condition, saving "<<bitmapRemainder<<endl;
-                                                    if(mutexFlag) pthread_mutex_unlock(&decodeLock);
-                                                    break;
-                                        }
-                                        if(mutexFlag) pthread_mutex_unlock(&decodeLock);
-                                    }
-                                }
-                                else {
-                                    memcpy(ldpcDataBuffer+(lBufCount*metadata->sizePacket),packet,metadata->sizePacket);
-                                    lBufCount++;
-                                }
-                                    				
+				if(ldpcFlag == 1) {
+					// Add to the LDPC
+					if(mutexFlag) pthread_mutex_lock(&decodeLock);
+					LdpcUser::AddDecodePacket(packet->data, packet->seqNum);
+					if(mutexFlag) pthread_mutex_unlock(&decodeLock);
+					// LDPC terminating condition
+					if(bitmapRemainder < metadata->numFecPackets){
+						if(mutexFlag) pthread_mutex_lock(&decodeLock);
+						if(LdpcUser::IsDecodingComplete()){
+							cerr<<"\nLDPC Terminating condition, saving "<<bitmapRemainder<<endl;
+							if(mutexFlag) pthread_mutex_unlock(&decodeLock);
+							break;
+						}
+						if(mutexFlag) pthread_mutex_unlock(&decodeLock);
+					}
+				}
+				else {
+					memcpy(ldpcDataBuffer+(lBufCount*metadata->sizePacket),packet,metadata->sizePacket);
+					lBufCount++;
+				}
 			}
 			bitmap[packet->seqNum] = 1;
 		}
 	}
+	cerr<<"Out of loop"<<endl;
 	// Send the termination command
 	for(int i=0;i<ACK_TERMINATION_NUMBER; i++)
 		SendAck(totalNumPackets);
@@ -164,14 +154,15 @@ void Receiver::Main(){
 }
 
 void Receiver::ReceiveMeta(){
-	char buf[PACKET_SIZE + 50];   // Static allocation on the stack
+	char actualbuf[PACKET_SIZE + 50];   // Static allocation on the stack
+	char *buf = actualbuf + IPHDRSIZE;
 	bool isMetaReceived = false;
 	PacketMetadata *metadata = new PacketMetadata;
 	while(!isMetaReceived){
 		socklen_t sendAddrlen = sizeof(struct sockaddr_in);
 		ssize_t recvLen;
-		recvLen = SocketWrapper::Recvfrom(sockIn, buf, PACKET_SIZE, 0, sendAddr, &sendAddrlen);
-		sendAddr->sin_port = htons(SENDER_PORT);
+		recvLen = SocketWrapper::Recvfrom(sockIn, actualbuf, PACKET_SIZE + 50, 0, sendAddr, &sendAddrlen);
+		recvLen -= IPHDRSIZE;
 		if(recvLen == sizeof(PacketMetadata)){
 			unserialize_Metadata(buf, metadata);
 			if(metadata->marker == 0xFFFFFFFF){
@@ -243,7 +234,7 @@ void Receiver::SendAck(unsigned int seqNum){
 		serialize_Ack(&packet, buf);
 		while(1){
 			try{
-			SocketWrapper::Sendto(sockOut, buf, sizeof(PacketAck), 0, sendAddr, sizeof(sockaddr_in));
+				SocketWrapper::Sendto(sockOut, buf, sizeof(PacketAck), 0, sendAddr, sizeof(sockaddr_in));
 			}
 			catch(int ex){
 				if(ex == EX_SOCK_ERRSENDTO && errno == ENOBUFS)

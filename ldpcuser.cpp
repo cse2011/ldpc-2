@@ -82,7 +82,7 @@ void LdpcUser::GenerateFec(){
 bool LdpcUser::IsDecodingComplete(){
 	if(LdpcUser::ldpcSession.IsDecodingComplete((void**)packetMap)){
 		// Do the last copy back
-		if(fileSize % LdpcUser::dataSize){
+		if(LdpcUser::fileSize % LdpcUser::dataSize){
 			unsigned int lastPos = LdpcUser::dataSize * (LdpcUser::numPackets - 1);
 			memcpy(LdpcUser::fileMem + lastPos, packetMap[(LdpcUser::numPackets - 1)], LdpcUser::fileSize % LdpcUser::dataSize);
 		}
@@ -104,6 +104,8 @@ void* LdpcUser::MemoryMapper(void* context, int size, int seqNum){
 		throw EX_LDPC_BADMEMSEQ;
 // MOGRE: End of optimization
 	if(seqNum < (LdpcUser::numPackets-1))
+		return LdpcUser::fileMem + (seqNum*LdpcUser::dataSize);
+	else if((seqNum == (LdpcUser::numPackets-1)) && !(LdpcUser::fileSize % LdpcUser::dataSize))
 		return LdpcUser::fileMem + (seqNum*LdpcUser::dataSize);
 	else
 		return new char[size];
