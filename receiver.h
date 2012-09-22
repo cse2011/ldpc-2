@@ -13,6 +13,7 @@ class Receiver{
 		static PacketMetadata *metadata;
 		static char *bitmap;
 		static unsigned int bitmapRemainder;
+                static int ldpcFlag;
 		static void SendMetaNack();
 		static void SendAck(unsigned int);
 		static void SaveToFile(PacketData*, unsigned int);
@@ -20,5 +21,6 @@ class Receiver{
 	public:
 		static void Main();
 		static void ReceiveMeta();
+                static void* LdpcProc(void* ptr);
 };
 #endif

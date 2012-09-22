@@ -14,6 +14,7 @@ class Sender{
 		static void *mappedPtr;
 		static char *bitmap;
 		static int bitmapRemainder;
+                static int ldpcThreadDone;
 		static PacketMetadata metadata;
 		static bool Send(char* buf, ssize_t len);
 		static bool RecvAck(unsigned int& seqNum);
@@ -21,5 +22,6 @@ class Sender{
 	public:
 		static void Main(sockaddr_in* hostAddr, char* filePath);
 		static void Sendmeta();
+                static void* LdpcProc(void* ptr);
 };
 #endif

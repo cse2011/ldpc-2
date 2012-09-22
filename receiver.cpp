@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
 
 #include <sys/types.h>
 #include <sys/fcntl.h>
@@ -24,6 +25,32 @@ char *Receiver::bitmap;
 int Receiver::filefd;
 void *Receiver::mappedPtr;
 unsigned int Receiver::bitmapRemainder;
+int Receiver::ldpcFlag = 0;
+char* ldpcDataBuffer = NULL;
+int lBufCount = 0;
+int mutexFlag = 0;
+pthread_mutex_t decodeLock;
+
+void* Receiver::LdpcProc(void* ptr) {
+    int i = 0;
+    // Initialize the LDPC
+    LdpcUser::InitLdpcUser(metadata->numPackets, metadata->numFecPackets, metadata->sizePacket - sizeof(uint32_t));
+    LdpcUser::InitDecoder();
+    LdpcUser::MapMemory(mappedPtr, metadata->fileSize);
+    
+    ldpcFlag = 1; //Other thread can now decode
+    
+    for(i = 0; i < lBufCount; i++) {
+        pthread_mutex_lock(&decodeLock);
+        PacketData* packet = (PacketData*)(ldpcDataBuffer + (i * metadata->sizePacket));
+        LdpcUser::AddDecodePacket(packet->data, packet->seqNum);
+        pthread_mutex_unlock(&decodeLock);
+    }
+    cerr<<"Done processing old packets"<<endl;
+    mutexFlag = 1;
+    return NULL;
+    
+}
 
 int main(int argc, char* argv[]){
 	// No arguments, just start the receiver
@@ -39,6 +66,11 @@ int main(int argc, char* argv[]){
 }
 
 void Receiver::Main(){
+        pthread_t ldpcThread;
+        pthread_mutex_init(&decodeLock,NULL);
+        //Allocate memory for ldpcDataBuffer
+        ldpcDataBuffer = (char*) malloc(LDPC_DATA_BUFFER_SIZE);
+        
 	// UDP socket connection time
 	sendAddr = new sockaddr_in;
 	
@@ -58,11 +90,10 @@ void Receiver::Main(){
 	// Receive the metadata
 	Receiver::ReceiveMeta();
 	cerr<<"Received the metadata"<<endl;
+        
+        //Create the LDPC Thread here
+        pthread_create(&ldpcThread,NULL,&Receiver::LdpcProc,NULL);
 	
-	// Initialize the LDPC
-	LdpcUser::InitLdpcUser(metadata->numPackets, metadata->numFecPackets, metadata->sizePacket - sizeof(uint32_t));
-	LdpcUser::InitDecoder();
-	LdpcUser::MapMemory(mappedPtr, metadata->fileSize);   
 	
 	// The loop
 	struct sockaddr_in senderAddr;
@@ -97,15 +128,28 @@ void Receiver::Main(){
 				if(count%skipCount == 0)		//Display purposes
 					cerr<<".";
 					
-				// Add to the LDPC
-				LdpcUser::AddDecodePacket(packet->data, packet->seqNum);
-				// LDPC terminating condition
-				//if(bitmapRemainder < metadata->numFecPackets){
-					if(LdpcUser::IsDecodingComplete()){
-						cerr<<"\nLDPC Terminating condition, saving "<<bitmapRemainder<<endl;
-						break;
-					}
-				//}
+                                if(ldpcFlag == 1) {
+                                
+                                    // Add to the LDPC
+                                    if(mutexFlag) pthread_mutex_lock(&decodeLock);
+                                    LdpcUser::AddDecodePacket(packet->data, packet->seqNum);
+                                    if(mutexFlag) pthread_mutex_unlock(&decodeLock);
+                                    // LDPC terminating condition
+                                    if(bitmapRemainder < metadata->numFecPackets){
+                                        if(mutexFlag) pthread_mutex_lock(&decodeLock);
+                                        if(LdpcUser::IsDecodingComplete()){
+                                                    cerr<<"\nLDPC Terminating condition, saving "<<bitmapRemainder<<endl;
+                                                    if(mutexFlag) pthread_mutex_unlock(&decodeLock);
+                                                    break;
+                                        }
+                                        if(mutexFlag) pthread_mutex_unlock(&decodeLock);
+                                    }
+                                }
+                                else {
+                                    memcpy(ldpcDataBuffer+(lBufCount*metadata->sizePacket),packet,metadata->sizePacket);
+                                    lBufCount++;
+                                }
+                                    				
 			}
 			bitmap[packet->seqNum] = 1;
 		}

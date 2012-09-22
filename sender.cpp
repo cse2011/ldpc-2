@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include <netdb.h>
 #include <sys/types.h>
@@ -30,6 +31,18 @@ void *Sender::mappedPtr;
 char *Sender::bitmap;
 PacketMetadata Sender::metadata;
 int Sender::bitmapRemainder;
+
+int Sender::ldpcThreadDone = 0;
+
+void* Sender::LdpcProc(void* ptr) {
+    // Initialize the ldpc user
+	LdpcUser::InitLdpcUser(metadata.numPackets, metadata.numFecPackets, (PACKET_SIZE - sizeof(uint32_t)));
+	LdpcUser::InitEncoder();
+	LdpcUser::MapMemory(mappedPtr, metadata.fileSize);
+	LdpcUser::GenerateFec();
+        Sender::ldpcThreadDone = 1;
+        return NULL;
+}
 
 void PrintUsage(){
 	cerr<<"USAGE: ./sender hostName fileName"<<endl;
@@ -71,6 +84,7 @@ int main(int argc, char *argv[]){
 }
 
 void Sender::Main(sockaddr_in *hostAddr, char* filePath){
+        pthread_t ldpcThread;
 	// UDP socket connection time
 	hostAddr->sin_port = htons(RECVER_PORT);
 	recvAddr = hostAddr;
@@ -109,11 +123,8 @@ void Sender::Main(sockaddr_in *hostAddr, char* filePath){
 	if(mappedPtr == MAP_FAILED)
 		throw EX_FILE_NOMAP;
 		
-	// Initialize the ldpc user
-	LdpcUser::InitLdpcUser(metadata.numPackets, metadata.numFecPackets, (PACKET_SIZE - sizeof(uint32_t)));
-	LdpcUser::InitEncoder();
-	LdpcUser::MapMemory(mappedPtr, fileSize);
-	LdpcUser::GenerateFec();
+        //Create the LDPC thread here
+	pthread_create(&ldpcThread,NULL,&Sender::LdpcProc,NULL);
 	
 	unsigned int totalNumPackets = metadata.numPackets + metadata.numFecPackets;
 	// Create the bitmap just before sending
@@ -171,10 +182,13 @@ void Sender::Main(sockaddr_in *hostAddr, char* filePath){
 #ifdef LOG
 					cout<<current->num<<endl;
 #endif
-					if(current->next < current) break;
-					if(Sender::SendChunk(current->num)){
-						current = current->next;
-					}
+                                        if(current->num >= metadata.numPackets && !Sender::ldpcThreadDone) {
+                                            current = current->next;
+                                            
+                                        }
+                                        else if(Sender::SendChunk(current->num)){
+                                                current = current->next;
+                                        }
 				}
 				if(bitmapRemainder == 0)
 					stopSending = true;

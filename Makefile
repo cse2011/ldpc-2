@@ -5,10 +5,10 @@ libldpc:
 	cd ldpclib/src; make; cd ../..
 	
 sender: sender.o socketwrapper.o serializer.o ldpcuser.o
-	g++ -g -Wall -o sender sender.o socketwrapper.o serializer.o ldpcuser.o ${LDPC_LIBRARY}
+	g++ -g -Wall -o sender sender.o socketwrapper.o serializer.o ldpcuser.o ${LDPC_LIBRARY} -lpthread
 
 receiver: receiver.o socketwrapper.o serializer.o ldpcuser.o
-	g++ -g -Wall -o receiver receiver.o socketwrapper.o serializer.o ldpcuser.o ${LDPC_LIBRARY}
+	g++ -g -Wall -o receiver receiver.o socketwrapper.o serializer.o ldpcuser.o ${LDPC_LIBRARY} -lpthread
 	
 sender.o: sender.cpp sender.h packetformat.h settings.h exceptions.h socketwrapper.h serializer.h
 	g++ -g -c -Wall -o sender.o sender.cpp
