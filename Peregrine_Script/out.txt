@@ -1,0 +1,22 @@
+Starting tournament with 2 teams!
+SERVER SETUP
+Setting up destination.bkLab4b.USC558L
+CLIENT SETUP
+Setting up source1.bkLab4b.USC558L
+Copying data file onto: source1.bkLab4b.USC558L
+CLIENT SETUP
+Setting up source2.bkLab4b.USC558L
+Copying data file onto: source2.bkLab4b.USC558L
+Round: 1
+==========
+Teams in contest:
+Peregrine1, Peregrine2, 
+==========
+Contest between [Peregrine1] and [Peregrine2]
+Pre-launching both servers on destination.bkLab4b.USC558L
+Pre-launching client[Peregrine1] on source1.bkLab4b.USC558L
+Pre-launching client[Peregrine2] on source2.bkLab4b.USC558L
+Launch [Peregrine1] server on  destination.bkLab4b.USC558L:10000
+Launch [Peregrine2] server on destination.bkLab4b.USC558L:20000
+Launch [Peregrine1] client on source1.bkLab4b.USC558L to conn to destination.bkLab4b.USC558L:10000
+Launch [Peregrine2] client on source2.bkLab4b.USC558L to conn to destination.bkLab4b.USC558L:20000

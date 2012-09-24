@@ -1,0 +1,26 @@
+{
+	"TestFile" : "/users/sc558bk/test1G.bin",
+	"ServerAddr" : "destination.bkLab4b.USC558L",
+	"ServerNodeAddr" : "destination",
+	"Client1Addr" : "source1.bkLab4b.USC558L",
+	"Client2Addr" : "source2.bkLab4b.USC558L",
+	"ServPort1" : 10000,
+	"ServPort2" : 20000,
+	"teams" : [ { "Name" : "Peregrine1",
+				  "ServerDataDir" :" /users/sc558bk/ldpc",
+				  "ServerPreStartCmd" : "ServerPreStart1.sh",
+				  "ServerStartCmd" : "ServerStart1.sh",
+				  "ClientDataDir" :" /users/sc558bk/ldpc",
+				  "ClientPreStartCmd" : "ClientPreStart1.sh" ,
+				  "ClientStartCmd" : "ClientStart1.sh" },
+
+		        { "Name" : "Peregrine2",
+				  "ServerDataDir" :" /users/sc558bk/Everyack",
+				  "ServerPreStartCmd" : "ServerPreStart1.sh",
+				  "ServerStartCmd" : "ServerStart1.sh",
+				  "ClientDataDir" :" /users/sc558bk/Everyack",
+				  "ClientPreStartCmd" : "ClientPreStart1.sh" ,
+				  "ClientStartCmd" : "ClientStart1.sh"}
+		      ]
+}
+
