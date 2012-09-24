@@ -10,6 +10,7 @@ class Receiver{
 		static int filefd;
 		static void *mappedPtr;
 		static struct sockaddr_in *sendAddr;
+                static struct sockaddr_in *recvAddr;
 		static PacketMetadata *metadata;
 		static char *bitmap;
 		static unsigned int bitmapRemainder;
@@ -22,5 +23,6 @@ class Receiver{
 		static void Main();
 		static void ReceiveMeta();
                 static void* LdpcProc(void* ptr);
+                static void* SabotageProc(void* ptr);
 };
 #endif
